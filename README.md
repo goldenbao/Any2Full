@@ -65,14 +65,14 @@ Example inputs are provided under `assets/`: `assets/rgb` and `assets/depth` can
 python run_any2full.py \
   --rgb /path/to/rgb.png \
   --depth /path/to/depth.png \
-  --checkpoint /path/to/ours_checkpoint.pth \
+  --checkpoint /path/to/Any2Full_vitl.pth.tar \
   --out_dir ./outputs
 
 # Batch (match by basename)
 python run_any2full.py \
   --rgb_dir /path/to/rgb_dir \
   --depth_dir /path/to/depth_dir \
-  --checkpoint /path/to/ours_checkpoint.pth \
+  --checkpoint /path/to/Any2Full_vitl.pth.tar \
   --out_dir ./outputs
 ```
 
@@ -81,7 +81,7 @@ Optional denoise (from `utils/denoise.py`): Any2Full relies on accurate sparse d
 python run_any2full.py \
   --rgb /path/to/rgb.png \
   --depth /path/to/depth.png \
-  --checkpoint /path/to/ours_checkpoint.pth \
+  --checkpoint /path/to/Any2Full_vitl.pth.tar \
   --out_dir ./outputs \
   --denoise \
   --denoise_threshold 2 \
