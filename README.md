@@ -17,6 +17,12 @@ Zhiyuan Zhou<sup>1</sup> · Ruofeng Liu<sup>2</sup> · Taichi Liu<sup>1</sup> ·
 
 ---
 
+## News
+- **[2026.06] 🎉 Any2Full has been accepted to ECCV 2026!**
+- **Training code and details are coming soon.** Thank you for your interest and support.
+
+---
+
 ## Overview
 ![teaser](assets/Any2Full.png)
 Accurate dense depth is essential for robotics, but commodity RGBD sensors are often sparse or incomplete. **Any2Full** is a one-stage, domain-general, and pattern-agnostic depth completion framework. It reformulates completion as **scale-prompting adaptation** of a pretrained monocular depth estimation (MDE) model, so the model keeps strong geometric priors while adapting to diverse sparse depth patterns.
