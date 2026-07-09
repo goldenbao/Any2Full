@@ -9,6 +9,8 @@
 !LICENSE
 !requirements.sh
 !run_any2full.py
+!export_onnx.py
+!infer_onnx.py
 
 # Keep core model code
 !model/
