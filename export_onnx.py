@@ -241,6 +241,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--source_height", type=int, default=None, help="Source height for auto-compute (overrides --height/--width)")
     parser.add_argument("--source_width", type=int, default=None, help="Source width for auto-compute (overrides --height/--width)")
     parser.add_argument("--opset", type=int, default=11, help="ONNX opset version")
+    parser.add_argument("--simplify", action="store_true", help="Run onnx-simplifier after export (may fold dynamic shapes)")
     return parser.parse_args()
 
 
@@ -329,6 +330,25 @@ def main():
     )
 
     _clean_onnx(str(out_path), output_names=["pred"])
+
+    if args.simplify:
+        # onnx-simplifier: 折叠 Shape/Gather/Slice 等路径为常量。
+        # 注意: 模型有动态序列长度，simplify 可能错误地将它们折叠为常量，
+        # 导致其他分辨率导入时 shape 不匹配。仅在确定输入固定分辨率时使用。
+        try:
+            import onnx
+            import onnxsim
+            orig = onnx.load(str(out_path))
+            orig_n = len(orig.graph.node)
+            simp_model, check = onnxsim.simplify(str(out_path))
+            if check:
+                onnx.save(simp_model, str(out_path))
+                simp_n = len(simp_model.graph.node)
+                print(f"  Simplified: {simp_n} nodes ({orig_n - simp_n} removed)")
+            else:
+                print("  Simplify check failed, keeping original")
+        except Exception as e:
+            print(f"  Simplify skipped: {e}")
 
     print(f"ONNX model saved to {out_path}")
 
