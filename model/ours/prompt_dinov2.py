@@ -209,7 +209,13 @@ class PromptDinoVisionTransformer(DinoVisionTransformer):
         if norm:
             outputs = [[self.norm(out[0]),[self.prompt_detph_norm(out[1][0]),out[1][1]]] for out in outputs]
         class_tokens = [out[0][:, 0] for out in outputs]
-        prompts = [[out[1][0][:, 1 + self.num_register_tokens:],out[1][1]]for out in outputs]
+        prompts = []
+        for out in outputs:
+            pv = out[1][0][:, 1 + self.num_register_tokens:]
+            pm = out[1][1]
+            if isinstance(pm, torch.Tensor):
+                pm = pm[:, 1 + self.num_register_tokens:]
+            prompts.append([pv, pm])
         outputs = [out[0][:, 1 + self.num_register_tokens:] for out in outputs]
         if reshape:
             B, _, w, h = x.shape

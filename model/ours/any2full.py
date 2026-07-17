@@ -164,14 +164,12 @@ class Any2Full(nn.Module):
        
         
         self.infer_time=self.infer_time+time.time()-start_time
-        if self.args.init_scailing: 
-            depth=self.disparity_to_depth(torch.clamp(self.init_scailing(disparity_pre,self.disparity_to_depth(prompt_depth)),min=1/self.args.max_depth))
-            depth= torch.clamp(depth, min=self.args.min_depth, max=self.args.max_depth)
+        if self.args.init_scailing:
+            depth = torch.clamp(self.init_scailing(disparity_pre, self.disparity_to_depth(prompt_depth)), min=1/self.args.max_depth)
         else:
             bias_0,scale_0=self.get_depth_bias_scale(disparity_pre)
             disparity_pre_norm=(disparity_pre-bias_0.view(-1, 1, 1, 1).detach())/(scale_0.view(-1, 1, 1, 1).detach())
-            depth = self.disparity_to_depth(torch.clamp(disparity_pre_norm*scale.view(-1, 1, 1, 1)+bias.view(-1, 1, 1, 1),min=1/self.args.max_depth))
-            depth= torch.clamp(depth, min=self.args.min_depth, max=self.args.max_depth)
+            depth = torch.clamp(disparity_pre_norm*scale.view(-1, 1, 1, 1)+bias.view(-1, 1, 1, 1), min=1/self.args.max_depth)
         
        
             

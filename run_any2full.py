@@ -134,13 +134,8 @@ def _collect_pairs(rgb_dir: str, depth_dir: str):
     for ext in ("*.png", "*.npy"):
         depth_files.extend(glob.glob(os.path.join(depth_dir, ext)))
 
-    depth_map = {Path(p).stem: p for p in depth_files}
-    pairs = []
-    for rgb in sorted(rgb_files):
-        key = Path(rgb).stem
-        dep = depth_map.get(key)
-        if dep is not None:
-            pairs.append((rgb, dep))
+    # Match by sorted order (assumes one-to-one correspondence)
+    pairs = list(zip(sorted(rgb_files), sorted(depth_files)))
     return pairs
 
 

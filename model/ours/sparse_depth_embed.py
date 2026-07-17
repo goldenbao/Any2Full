@@ -69,10 +69,12 @@ class DepthPatchEmbed(nn.Module):
         self.patch_size = patch_size
    
         
-        self.depth_heatmap_encoder= nn.ModuleList([
-            nn.Conv2d(2, embed_dim, self.patch_size, stride=self.patch_size),
-            nn.Conv2d(2, embed_dim, self.patch_size//2, stride=self.patch_size//2),
-            nn.Conv2d(2, embed_dim, self.patch_size//4, stride=self.patch_size//4),
+        # Conv2d(kernel_size=stride) → output 1x1, 等价于 Linear.
+        # 用 Linear 避免 B*N 的 batch 展开，保持 batch=1，方便 NPU 部署。
+        self.depth_heatmap_encoder = nn.ModuleList([
+            nn.Linear(2 * self.patch_size * self.patch_size, embed_dim),
+            nn.Linear(2 * (self.patch_size // 2) * (self.patch_size // 2), embed_dim),
+            nn.Linear(2 * (self.patch_size // 4) * (self.patch_size // 4), embed_dim),
         ])
 
     
@@ -117,39 +119,42 @@ class DepthPatchEmbed(nn.Module):
         d_min = x.amin(dim=[1,2,3], keepdim=True)  # (B, 1, 1, 1)
         mask = (x > d_min + epsilon).to(x.dtype)
 
-        unfold = nn.Unfold(kernel_size=patch_size, stride=patch_size)
-        depth_patches = unfold(x)           # [B, P*P, N]
-        mask_patches = unfold(mask)         # [B, P*P, N]
-        N = depth_patches.shape[-1]
+        h_patches = H // patch_size
+        w_patches = W // patch_size
+        N = h_patches * w_patches
 
-        depth_patches = depth_patches.transpose(1,2).reshape(B*N, 1, patch_size, patch_size)
-        mask_patches = mask_patches.transpose(1,2).reshape(B*N, 1, patch_size, patch_size)
-
-        # Missing-aware interpolation
+        # Missing-aware interpolation (全图尺度处理，避免 B*N 展开)
         depth_vect_list=[]
-        for i in range(len(grid_size_list)):
-            grid_size=grid_size_list[i]
-            def custom_mean_pool(x, mask, output_size):
-                # Mean pooling
-                x_pooled = F.adaptive_avg_pool2d(x * mask, output_size)
-                mask_pooled = F.adaptive_avg_pool2d(mask, output_size)
-                
-                # Avoid divide-by-zero
-                epsilon = 1e-5
-                return x_pooled / (mask_pooled + epsilon), mask_pooled
+        for i, gs in enumerate(grid_size_list):
+            # 在全图上做 adaptive_avg_pool2d，等价于逐 patch pool 到 (gs, gs)
+            depth_pooled = F.adaptive_avg_pool2d(x * mask, (h_patches * gs, w_patches * gs))
+            mask_pooled = F.adaptive_avg_pool2d(mask, (h_patches * gs, w_patches * gs))
+            depth_heatmap = depth_pooled / (mask_pooled + 1e-5)
+            mask_interp = mask_pooled
 
-            depth_heatmap,mask_interp = custom_mean_pool(depth_patches, mask_patches, (grid_size, grid_size))
-
-            # Reshape to [B, N, 1, k, k]
             with torch.no_grad():
                 depth_heatmap = self.efficient_nearest_fill(depth_heatmap, mask_interp)
-            depth_heatmap = depth_heatmap.view(B, N, 1, grid_size, grid_size)
-            mask_heatmap = mask_interp.view(B, N, 1, grid_size, grid_size)
-            depth_vect=self.depth_heatmap_encoder[i]( torch.cat([depth_heatmap, mask_heatmap], dim=2).view(-1, 2, depth_heatmap.shape[-2], depth_heatmap.shape[-1]))
-            depth_vect_list.append(depth_vect.view(B, N, self.embed_dim))
-        return torch.sum(torch.stack(depth_vect_list,dim=0),dim=0).view(B, -1, self.embed_dim), (F.adaptive_avg_pool2d(mask_heatmap.reshape(B*N, 1, mask_heatmap.shape[-2], mask_heatmap.shape[-1]), (1, 1)) > 0).to(mask_heatmap.dtype).view(B, N, 1)  
-       
 
+            # (B, 1, h_p*gs, w_p*gs) → (B, N, 1, gs, gs)
+            depth_heatmap = depth_heatmap.view(B, 1, h_patches, gs, w_patches, gs) \
+                .permute(0, 2, 4, 1, 3, 5).reshape(B, N, 1, gs, gs)
+            mask_heatmap = mask_interp.view(B, 1, h_patches, gs, w_patches, gs) \
+                .permute(0, 2, 4, 1, 3, 5).reshape(B, N, 1, gs, gs)
+
+            combined = torch.cat([depth_heatmap, mask_heatmap], dim=2)  # (B, N, 2, gs, gs)
+            depth_vect = self.depth_heatmap_encoder[i](combined.view(B, N, -1))  # (B, N, embed_dim)
+            depth_vect_list.append(depth_vect)
+        return torch.sum(torch.stack(depth_vect_list, dim=0), dim=0), \
+            (mask_heatmap.reshape(B, N, -1).sum(dim=-1, keepdim=True) > 0).to(mask_heatmap.dtype)
+
+
+    def _load_from_state_dict(self, state_dict, prefix, local_metadata, strict, missing_keys, unexpected_keys, error_msgs):
+        # 兼容旧版 Conv2d checkpoint: 将 4D conv weight 展开为 2D linear weight
+        for i in range(len(self.depth_heatmap_encoder)):
+            w_key = prefix + f'depth_heatmap_encoder.{i}.weight'
+            if w_key in state_dict and state_dict[w_key].dim() == 4:
+                state_dict[w_key] = state_dict[w_key].view(self.embed_dim, -1)
+        super()._load_from_state_dict(state_dict, prefix, local_metadata, strict, missing_keys, unexpected_keys, error_msgs)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         
